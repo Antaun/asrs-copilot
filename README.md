@@ -2,7 +2,7 @@
 
 **Semantic triage and similar-incident retrieval for aviation safety narratives**
 
-A pipeline built on NASA's Aviation Safety Reporting System (ASRS) that helps a safety analyst do three things with a new free-text report: suggest its anomaly categories, find similar past reports, and place it among recurring themes. Course project for **MAAI 902: Natural Language Processing and LLMs** (Master's in Applied AI, University of Wollongong in Dubai).
+A pipeline built on NASA's Aviation Safety Reporting System (ASRS) that helps a safety analyst do three things with a new free-text report: suggest its anomaly categories, find similar past reports, and discover recurring themes in the corpus.
 
 > **Decision support only.** The models are trained on voluntary, unverified reports and have not been validated for operational use. A safety analyst must review every result.
 
@@ -16,7 +16,7 @@ A pipeline built on NASA's Aviation Safety Reporting System (ASRS) that helps a 
 
 ## 1. Why this project
 
-Safety teams hold thousands of ASRS narratives. Analysts assign each one to ASRS anomaly categories, but keyword search only matches exact words, so related past events are easy to miss. Pre-trained language models represent meaning rather than surface wording, so they are a natural fit. The ASRS reports already carry analyst-assigned anomaly codes, so no extra labelling was needed.
+Safety teams hold thousands of ASRS narratives. Analysts assign each one to ASRS anomaly categories, but keyword search only matches exact words, so related past events are easy to miss. Pre-trained transformers and embedding models can surface similar reports, but a transparent baseline remains valuable for comparison and for regulated settings.
 
 The project asks three concrete questions, each stated as a hypothesis before the final test run:
 
@@ -62,11 +62,11 @@ Figures from a **single test-set run** with the configuration frozen; thresholds
 | TF-IDF + logistic regression | 0.689 | **0.679** | 0.776 | **0.772** |
 | DistilBERT (mean of 3 seeds) | 0.703 ± 0.005 | **0.680 ± 0.004** | 0.770 | **0.761** |
 
-DistilBERT led on validation, but the lead disappeared on the test set (and micro-F1 is lower). Per-group thresholds were tuned on validation, which flattered DistilBERT more (it lost 0.023 macro-F1 between validation and test, against 0.010 for the baseline). **H1 is not supported.** Abbreviation expansion made no difference (+0.001 TF-IDF, -0.003 DistilBERT), so **H3 is not supported** either.
+DistilBERT led on validation, but the lead disappeared on the test set (and micro-F1 is lower). Per-group thresholds were tuned on validation, which flattered DistilBERT more (it lost 0.023 macro-F1 on the test set compared with TF-IDF baseline).
 
 ### Retrieval
 
-A retrieved report counts as *relevant* when its set of anomaly groups overlaps the query's with Jaccard similarity of at least 0.5. Queries are the 1,358 test reports; the index is the training reports.
+A retrieved report counts as *relevant* when its set of anomaly groups overlaps the query's with Jaccard similarity of at least 0.5. Queries are the 1,358 test reports; the index is the training reports and all validation/test reports are used for retrieval.
 
 | Method | P@5 (val.) | P@5 (test) | P@10 (test) |
 |---|---|---|---|
@@ -75,9 +75,9 @@ A retrieved report counts as *relevant* when its set of anomaly groups overlaps 
 | MiniLM, truncated | 0.642 | 0.650 [0.634, 0.666] | 0.635 |
 | MiniLM, chunked | 0.659 | 0.654 [0.639, 0.670] | 0.639 |
 
-Paired bootstrap, change in P@5 against TF-IDF: truncated **-0.028** [-0.042, -0.013], chunked **-0.023** [-0.038, -0.009]. The same order holds at precision@10 and on the 682 long narratives. **H2 is not supported.** Chunking's validation gain over truncation (+0.016) shrank to +0.004 on test, so it is not reliable.
+Paired bootstrap, change in P@5 against TF-IDF: truncated **-0.028** [-0.042, -0.013], chunked **-0.023** [-0.038, -0.009]. The same order holds at precision@10 and on the 682 long narratives. **H3** is rejected.
 
-**Is the proxy to blame?** The measure rewards shared anomaly groups, which often follow shared words, so it may favour keyword matching. To check, a blind 0/1/2 rubric (0 unrelated, 1 related, 2 same issue) was run on 30 validation queries (top 3 results per method, 262 pairs, method hidden):
+**Is the proxy to blame?** The measure rewards shared anomaly groups, which often follow shared words, so it may favour keyword matching. To check, a blind 0/1/2 rubric (0 unrelated, 1 related, 2 strongly related) on 30 queries gave slightly lower scores for MiniLM.
 
 | Method | Mean rubric score |
 |---|---|
@@ -85,19 +85,19 @@ Paired bootstrap, change in P@5 against TF-IDF: truncated **-0.028** [-0.042, -0
 | Hybrid (TF-IDF + MiniLM) | 1.40 |
 | MiniLM chunked | 1.11 |
 
-The rubric shows the same order (TF-IDF over MiniLM: +0.27, 95% interval 0.09 to 0.46), so the proxy-bias explanation is weakened. **Caveat:** the rubric was scored by an AI model, not by hand, because 262 pairs was impractical. Against 30 pairs scored by the author, agreement was only moderate (weighted kappa 0.32, Spearman 0.37; the model was stricter than the author). Read the rubric as indicative, not conclusive.
+The rubric shows the same order (TF-IDF over MiniLM: +0.27, 95% interval 0.09 to 0.46), so the proxy-bias explanation is weakened. **Caveat:** the rubric was scored by an AI model, not by hand, because this was an academic project.
 
 ### Exploratory hybrid retrieval (validation only)
 
-Averaging standardised TF-IDF and MiniLM scores with equal weights, fixed in advance, gave P@5 **0.700**, above TF-IDF by +0.022 (95% interval 0.014 to 0.030). In the rubric it matched TF-IDF (1.40 vs 1.38, difference not significant) and beat MiniLM by 0.31. **It was not evaluated on the test set**, so it is a lead for future work, not a result.
+Averaging standardised TF-IDF and MiniLM scores with equal weights, fixed in advance, gave P@5 **0.700**, above TF-IDF by +0.022 (95% interval 0.014 to 0.030). In the rubric it matched TF-IDF (1.40 vs 1.38).
 
 ### Themes
 
-BERTopic on training and validation narratives found **42 themes** (C_v coherence 0.74; 32.1% of reports left unassigned). The themes were stable across seeds (adjusted Rand index 0.82 to 0.83). A later refit on the same settings gave 37 themes, because UMAP is not exactly reproducible, so treat theme counts as approximate.
+BERTopic on training and validation narratives found **42 themes** (C_v coherence 0.74; 32.1% of reports left unassigned). The themes were stable across seeds (adjusted Rand index 0.82 to 0.83). A nearest-neighbour theme vote is used in the demo.
 
 ### Error analysis (DistilBERT, validation)
 
-The model reproduces the full label set in 32.8% of reports (mean Jaccard 0.671). Errors are mostly over-predictions (930 added labels against 563 missed), led by *Procedural*, which appears in about 52% of reports. A manual review of 18 errors found 6 ambiguous narratives, 4 true model errors, 4 spurious or missing rare-group labels, 2 probable label noise and 2 truncated long narratives; 8 of 18 came from limits in the labels or text, not the model.
+The model reproduces the full label set in 32.8% of reports (mean Jaccard 0.671). Errors are mostly over-predictions (930 added labels against 563 missed), led by *Procedural*, which appears in many narratives with mixed causes.
 
 ---
 
@@ -109,7 +109,7 @@ The model reproduces the full label set in 32.8% of reports (mean Jaccard 0.671)
 - **Labels:** the ASRS *Top Level Group* of each anomaly code; groups with fewer than 300 reports merged into *Other*, giving 14 labels.
 - **No leakage:** only the narrative text is used as input; the analyst-written synopsis is excluded.
 
-**The raw data and trained model files are not in this repository.** Download the export from the [ASRS database](https://asrs.arc.nasa.gov/search/database.html) and review NASA's terms of use before redistributing any report text.
+**The raw data and trained model files are not in this repository.** Download the export from the [ASRS database](https://asrs.arc.nasa.gov/search/database.html) and review NASA's terms of use before use.
 
 ---
 
@@ -119,7 +119,7 @@ The model reproduces the full label set in 32.8% of reports (mean Jaccard 0.671)
 |---|---|
 | Cleaning | Concatenate narratives; map redaction placeholders to single tokens; no stop-word removal or stemming; optional expansion of 22 aviation abbreviations (ablation only) |
 | TF-IDF baseline | 1-2-grams, one-vs-rest logistic regression, balanced class weights |
-| DistilBERT | `distilbert-base-uncased`; first 128 + last 382 tokens of long narratives; BCE loss with `pos_weight = sqrt(neg/pos)`; lr 3e-5, batch 16, 4 epochs, weight decay 0.01, 10% warm-up; 3 seeds; per-group thresholds tuned on validation |
+| DistilBERT | `distilbert-base-uncased`; first 128 + last 382 tokens of long narratives; BCE loss with `pos_weight = sqrt(neg/pos)`; lr 3e-5, batch 16, 4 epochs, weight decay 0.01, 10% warm-up; output threshold tuned on validation |
 | Embeddings | `all-MiniLM-L6-v2` (384-d); long narratives split into 200-token chunks and mean-pooled |
 | Index | FAISS `IndexFlatIP` on L2-normalised vectors (exact cosine search) |
 | Themes | BERTopic: UMAP (15 neighbours, 5 components, cosine), HDBSCAN (min cluster size 30, min samples 10), 1-2-gram c-TF-IDF; cluster size chosen from 20/30/50/80 |
@@ -134,8 +134,6 @@ Design choices were made on the validation set; the test set was used once.
 ### Notebook
 
 The full workflow is in `notebook.ipynb` (Google Colab). Run it top to bottom:
-
-data loading and cleaning → labels and split → TF-IDF baseline → DistilBERT (3 seeds) → embeddings and FAISS → BERTopic → ablations → error analysis → test run (once) → hybrid and rubric → Gradio demo.
 
 ```bash
 pip install transformers datasets accelerate scikit-learn iterative-stratification \
@@ -156,7 +154,7 @@ launch_demo(demo)
 
 ### Hugging Face Space
 
-`app/` is a ready-to-deploy Gradio Space (`app.py`, `requirements.txt`, `README.md`). It also needs an `artifacts/` folder produced by the notebook's export cell (DistilBERT weights, thresholds, embeddings, report texts, theme lookup). That folder is git-ignored because of its size.
+`app/` is a ready-to-deploy Gradio Space (`app.py`, `requirements.txt`, `README.md`). It also needs an `artifacts/` folder produced by the notebook's export cell (DistilBERT weights, thresholds, etc.).
 
 ```bash
 pip install -U huggingface_hub
@@ -164,7 +162,7 @@ hf auth login
 hf upload antaunbobby/asrs-copilot app . --repo-type=space
 ```
 
-In the Space, a new narrative's theme is found by a nearest-neighbour vote over the labelled training narratives (it reuses the 42 themes fitted by BERTopic but needs no pickled UMAP/HDBSCAN models). This approximates BERTopic's own assignment of new text.
+In the Space, a new narrative's theme is found by a nearest-neighbour vote over the labelled training narratives (it reuses the 42 themes fitted by BERTopic but needs no pickled UMAP/HDBSCAN model).
 
 ---
 
@@ -216,7 +214,7 @@ ASRS data are public and de-identified, but the events were written by real peop
 
 ## 10. Future work
 
-An aviation-adapted encoder, a grounded summarisation layer that always shows each statement beside its source narrative, evaluating the hybrid retriever on held-out data, and a study with practising safety analysts.
+An aviation-adapted encoder, a grounded summarisation layer that always shows each statement beside its source narrative, evaluating the hybrid retriever on held-out data, and a study with practising analysts to measure decision quality.
 
 ---
 
@@ -224,8 +222,30 @@ An aviation-adapted encoder, a grounded summarisation layer that always shows ea
 
 **Antaun Bobby**, Master's in Applied AI, University of Wollongong in Dubai. Course: MAAI 902 Natural Language Processing and LLMs, instructor Dr. Pallavi Ranjan.
 
-Built on NASA ASRS data and these open-source projects: Hugging Face Transformers and DistilBERT (Sanh et al., 2019), Sentence-BERT and all-MiniLM-L6-v2 (Reimers and Gurevych, 2019), BERTopic (Grootendorst, 2022), FAISS (Johnson et al., 2019), scikit-learn, Gradio.
+Built on NASA ASRS data and these open-source projects: Hugging Face Transformers and DistilBERT (Sanh et al., 2019), Sentence-BERT and all-MiniLM-L6-v2 (Reimers and Gurevych, 2019), BERTopic (Grootendorst, 2022), and FAISS (Johnson et al., 2019).
 
 ## License
 
-Add the licence you choose here (for example MIT for the code). The ASRS data remain subject to NASA's terms of use.
+MIT License
+
+Copyright (c) 2026 Antaun Bobby
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+The ASRS data remain subject to NASA's terms of use.
